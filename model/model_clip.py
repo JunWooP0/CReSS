@@ -32,32 +32,59 @@ class ChemClipModel(SelfCorrelationBaseModel):
             self.nmr_middleware = nn.Sequential(
                 nn.Linear(self.feature_dim, self.feature_dim))
 
-        if self.frozen_smiles_model:
-            self.smiles_model.eval()
-        else:
-            self.smiles_model.train()
-        if self.frozen_nmr_model:
-            self.nmr_model.eval()
-        else:
-            self.nmr_model.train()
+        # ── SMILES 모델이 None이 아닐 때만 train/eval 호출 ──
+        if self.smiles_model is not None:
+            if self.frozen_smiles_model:
+                self.smiles_model.eval()
+            else:
+                self.smiles_model.train()
+        # smiles_model이 None이면 아무 작업도 하지 않음
+
+        # ── NMR 모델도 None인지 확인하고 train/eval 호출 ──
+        if self.nmr_model is not None:
+            if self.frozen_nmr_model:
+                self.nmr_model.eval()
+            else:
+                self.nmr_model.train()
+        # nmr_model이 None이면 아무 작업도 하지 않음
 
     def load_weights(self, path):
-        if path is not None:
-            model_dict = torch.load(path, map_location=torch.device('cpu'))
-            self.load_state_dict(model_dict)
+        if path is None:
+            return
 
+        # 1) 전체 체크포인트 불러오기
+        ckpt = torch.load(path, map_location=torch.device('cpu'))
+
+        # 2) 'nmr_model.' 으로 시작하는 키들만 필터링
+        nmr_state_dict = {}
+        for key, value in ckpt.items():
+            # 예: key == "nmr_model.layer1.weight" 등
+            if key.startswith("nmr_model."):
+                # 'nmr_model.' 다음 부분을 그대로 사용
+                new_key = key[len("nmr_model."):]
+                nmr_state_dict[new_key] = value
+
+        # 3) NMR 모델 가중치 로드
+        if self.nmr_model is not None:
+            self.nmr_model.load_state_dict(nmr_state_dict)
+        else:
+            raise RuntimeError("NMR model이 정의되지 않은 상태에서 체크포인트를 로드하려 합니다.")
     def smiles_model_eval(self):
         self.frozen_smiles_model = True
-        self.smiles_model.eval()
+        if self.smiles_model is not None:
+            self.smiles_model.eval()
 
     def smiles_model_train(self):
         self.frozen_smiles_model = False
-        self.smiles_model.train()
+        if self.smiles_model is not None:
+            self.smiles_model.train()
 
     def nmr_model_eval(self):
         self.frozen_nmr_model = True
-        self.nmr_model.eval()
+        if self.nmr_model is not None:
+            self.nmr_model.eval()
 
     def nmr_model_train(self):
         self.frozen_nmr_model = False
-        self.nmr_model.train()
+        if self.nmr_model is not None:
+            self.nmr_model.train()
